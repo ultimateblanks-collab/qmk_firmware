@@ -59,7 +59,8 @@
             "twinkle": false
         },
         "hue_steps": 10,
-        "max_brightness": 120
+        "max_brightness": 120,
+        "sleep": true
     },
     "layouts": {
         "LAYOUT": {

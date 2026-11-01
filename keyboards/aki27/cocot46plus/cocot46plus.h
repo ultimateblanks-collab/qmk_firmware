@@ -50,6 +50,16 @@ enum cocot_keycodes {
 #define SCRL_MO QK_KB_4
 #define SCRL_TO QK_KB_5
 #define SCRL_IN QK_KB_6
+#define CPI_UP  QK_KB_7   // CPIを1段上げる
+#define CPI_DN  QK_KB_8   // CPIを1段下げる
+#define AM_TOG  QK_KB_9   // AML機能のオン／オフ（状態は保存）
+#define RDP_UP  QK_KB_10  // RDP対策：押下側の待ちを+10ms（保存）
+#define RDP_DN  QK_KB_11  // RDP対策：押下側の待ちを-10ms（保存）
+#define RDP_TOG QK_KB_12  // RDP対策のオン／オフ（保存。オフでQMK標準の動作）
+
+// RDP対策の状態表示(OLED用)。keymap側で定義すると表示される(未定義なら表示なし)
+char cocot_rdp_indicator(void);               // 4行目末尾の1文字。0なら表示しない
+bool cocot_rdp_popup(char *buf, uint8_t len); // trueのとき4行目をbufの内容に置き換える
 
 extern cocot_config_t cocot_config;
 

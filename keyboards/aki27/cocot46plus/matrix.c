@@ -21,20 +21,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static const pin_t row_pins[MATRIX_ROWS] = MATRIX_ROW_PINS;
 static const pin_t col_pins[MATRIX_COLS] = MATRIX_COL_PINS;
 
+// MATRIX_ROW_PINS の5本目は NO_PIN（エンコーダ用の仮想行）。
+// AVRで NO_PIN を gpio_read_pin すると常に LOW（押下）と読まれ、
+// 行9のキーが押しっぱなし扱いになってスリープ復帰の原因になるため、NO_PIN は読まない・駆動しない。
+
 static void select_row(uint8_t row)
 {
+    if (row_pins[row] == NO_PIN) return;
     gpio_set_pin_output(row_pins[row]);
     gpio_write_pin_low(row_pins[row]);
 }
 
 static void unselect_row(uint8_t row)
 {
+    if (row_pins[row] == NO_PIN) return;
     gpio_set_pin_input_high(row_pins[row]);
 }
 
 static void unselect_rows(void)
 {
-    for(uint8_t x = 0; x < MATRIX_ROWS; x++) {
+    for(uint8_t x = 0; x < MATRIX_ROWS / 2; x++) {
+        if (row_pins[x] == NO_PIN) continue;
         gpio_set_pin_input_high(row_pins[x]);
     }
 }
@@ -63,7 +70,8 @@ static void init_pins(void) {
   for (uint8_t x = 0; x < MATRIX_COLS; x++) {
     gpio_set_pin_input_high(col_pins[x]);
   }
-  for (uint8_t x = 0; x < MATRIX_ROWS; x++) {
+  for (uint8_t x = 0; x < MATRIX_ROWS / 2; x++) {
+    if (row_pins[x] == NO_PIN) continue;
     gpio_set_pin_input_high(row_pins[x]);
   }
 }
@@ -75,6 +83,11 @@ static bool read_cols_on_row(matrix_row_t current_matrix[], uint8_t current_row)
 
     // Clear data in matrix row
     current_matrix[current_row] = 0;
+
+    // NO_PIN の行は物理的に存在しないので読まない
+    if (row_pins[current_row] == NO_PIN) {
+        return (last_row_value != current_matrix[current_row]);
+    }
 
     // Select row and wait for row selecton to stabilize
     select_row(current_row);
@@ -112,7 +125,7 @@ static bool read_rows_on_col(matrix_row_t current_matrix[], uint8_t current_col)
         matrix_row_t last_row_value = current_matrix[tmp];
 
         // Check row pin state
-        if (gpio_read_pin(row_pins[row_index]) == 0)
+        if (row_pins[row_index] != NO_PIN && gpio_read_pin(row_pins[row_index]) == 0)
         {
             // Pin LO, set col bit
             current_matrix[tmp] |= (MATRIX_ROW_SHIFTER << current_col);

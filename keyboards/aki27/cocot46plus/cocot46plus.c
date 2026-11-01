@@ -104,7 +104,7 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
         }
 
         // Accumulate scroll values
-        if (cocot_config.scrl_inv) {
+        if (cocot_config.scrl_inv > 0) {  // scrl_inv は 1 / -1 で切り替わるため符号で判定
             h_acm += smoothed_x;
             v_acm -= smoothed_y;
         } else {
@@ -214,7 +214,7 @@ void matrix_init_kb(void) {
     // is safe to just read CPI setting since matrix init
     // comes before pointing device init.
     cocot_config.raw = eeconfig_read_kb();
-    if (cocot_config.cpi_idx > CPI_OPTION_SIZE) // || cocot_config.scrl_div > SCRL_DIV_SIZE || cocot_config.rotation_angle > ANGLE_SIZE)
+    if (cocot_config.cpi_idx >= CPI_OPTION_SIZE) // || cocot_config.scrl_div > SCRL_DIV_SIZE || cocot_config.rotation_angle > ANGLE_SIZE)
     {
         eeconfig_init_kb();
     }
@@ -249,59 +249,81 @@ void render_logo(void) {
     oled_write_P(cocot_logo, false);
 };
 
+// RDP対策の状態表示。keymap側で定義されていなければ何も表示しない
+__attribute__((weak)) char cocot_rdp_indicator(void) {
+    return 0;
+}
+__attribute__((weak)) bool cocot_rdp_popup(char *buf, uint8_t len) {
+    return false;
+}
+
+#define COCOT_OLED_COLS 21 // 128px / 6px(フォント幅)
+
+static uint8_t oled_put_P(char *line, uint8_t n, const char *s) {
+    for (char c; n < COCOT_OLED_COLS && (c = pgm_read_byte(s)) != '\0'; s++) line[n++] = c;
+    return n;
+}
+static uint8_t oled_put(char *line, uint8_t n, const char *s) {
+    while (n < COCOT_OLED_COLS && *s) line[n++] = *s++;
+    return n;
+}
+
+// 4行目: <レイヤー名>/<C|S>/<CPI>/<スクロール>/<角度>[/<RDP R|->]
+// 例: "Base /C/1250/ 4/-30/R"（ちょうど21文字）
+// RDP_UP / RDP_DN / RDP_TOG を押した直後は、設定値の表示に一時的に切り替わる
 void oled_write_layer_state(void) {
+    char    line[COCOT_OLED_COLS + 1];
+    uint8_t n = 0;
 
-    oled_write_P(PSTR(" "), false);
-    // int cpi = pointing_device_get_cpi();
-    int cpi = cpi_array[cocot_config.cpi_idx];
-    int scroll_div = scrl_div_array[cocot_config.scrl_div];
-    int angle = angle_array[cocot_config.rotation_angle];
-    
-    char buf1[5];
-    char buf2[3];
-    char buf3[4];
-    snprintf(buf1, 5, "%4d", cpi);
-    snprintf(buf2, 3, "%2d", scroll_div);
-    snprintf(buf3, 4, "%3d", angle);
+    if (cocot_rdp_popup(line, sizeof(line))) {
+        while (n < COCOT_OLED_COLS && line[n] != '\0') n++;
+    } else {
+        int cpi        = cpi_array[cocot_config.cpi_idx];
+        int scroll_div = scrl_div_array[cocot_config.scrl_div];
+        int angle      = (int16_t)angle_array[cocot_config.rotation_angle];
 
-    switch (get_highest_layer(layer_state | default_layer_state)) {
-        case 0:
-            oled_write_P(PSTR("Base "), false);
-            break;
-        case 1:
-            oled_write_P(PSTR("Lower"), false);
-            break;
-        case 2:
-            oled_write_P(PSTR("Raise"), false);
-            break;
-        case 3:
-            oled_write_P(PSTR("Mouse"), false);
-            break;
-        case 4:
-            oled_write_P(PSTR("L4   "), false);
-            break;
-        case 5:
-            oled_write_P(PSTR("L5   "), false);
-            break;
-        case 6:
-            oled_write_P(PSTR("L6   "), false);
-            break;
-        default:
-            oled_write_P(PSTR("Undef"), false);
-            break;
+        // snprintf は容量が大きいため、QMK標準の get_numeric_str で右詰めの数値文字列を作る
+        char buf1[5];
+        char buf2[3];
+        char buf3[4];
+        get_numeric_str(buf1, sizeof(buf1), (uint32_t)cpi, ' ');
+        get_numeric_str(buf2, sizeof(buf2), (uint32_t)scroll_div, ' ');
+        get_numeric_str(buf3, sizeof(buf3), (uint32_t)(angle < 0 ? -angle : angle), ' ');
+        if (angle < 0) {
+            // 符号を数字の直前に置く（角度は最大2桁なので先頭に空白がある）
+            for (int8_t i = 1; i >= 0; i--) {
+                if (buf3[i] == ' ') { buf3[i] = '-'; break; }
+            }
+        }
+
+        const char *name;
+        switch (get_highest_layer(layer_state | default_layer_state)) {
+            case 0:  name = PSTR("Base "); break;
+            case 1:  name = PSTR("Mouse"); break;
+            case 2:  name = PSTR("Scrl "); break;
+            case 3:  name = PSTR("Lower"); break;
+            case 4:  name = PSTR("Raise"); break;
+            default: name = PSTR("Undef"); break;
+        }
+        n = oled_put_P(line, n, name);
+        n = oled_put_P(line, n, cocot_get_scroll_mode() ? PSTR("/S/") : PSTR("/C/"));
+        n = oled_put(line, n, buf1);
+        n = oled_put_P(line, n, PSTR("/"));
+        n = oled_put(line, n, buf2);
+        n = oled_put_P(line, n, PSTR("/"));
+        n = oled_put(line, n, buf3);
+
+        char rdp = cocot_rdp_indicator();
+        if (rdp && n + 2 <= COCOT_OLED_COLS) {
+            line[n++] = '/';
+            line[n++] = rdp;
+        }
     }
-    oled_write_P(PSTR("/"), false);
-    if (cocot_get_scroll_mode()){
-        oled_write_P(PSTR("S"), false);
-    } else{
-        oled_write_P(PSTR("C"), false);
-    }
-    oled_write_P(PSTR("/"), false);
-    oled_write(buf1, false);
-    oled_write_P(PSTR("/"), false);
-    oled_write(buf2, false);
-    oled_write_P(PSTR("/"), false);
-    oled_write(buf3, false);
+
+    // 1行ちょうどの文字数にそろえる（前の表示の消え残りを防ぐ）
+    while (n < COCOT_OLED_COLS) line[n++] = ' ';
+    line[COCOT_OLED_COLS] = '\0';
+    oled_write(line, false);
 }
 
 #endif
