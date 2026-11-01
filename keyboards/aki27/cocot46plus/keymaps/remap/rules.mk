@@ -1,0 +1,6 @@
+VIA_ENABLE = yes
+ENCODER_MAP_ENABLE = yes
+
+# サイズ削減
+OLED_ENABLE = no
+EXTRAKEY_ENABLE = no
