@@ -17,12 +17,6 @@
 #define CHORDAL_HOLD
 #define FLOW_TAP_TERM 175
 
-/* オートマウスレイヤー（AML） */
-#define POINTING_DEVICE_AUTO_MOUSE_ENABLE
-#define AUTO_MOUSE_DEFAULT_LAYER 1
-#define AUTO_MOUSE_TIME 30000      // AMLのタイムアウト(ms)
-#define AML_CLICK_EXIT_TIME 250    // マウスボタンを押してからAML解除までの時間(ms)
-
 /* RDP対策：修飾付きキーコードの修飾キーと本体の間の待ち時間(ms) */
 #define RDP_PRESS_DELAY 70     // 初期値。RDP_UP/RDP_DNで変更しEEPROMに保存
 #define RDP_RELEASE_DELAY 5
@@ -31,6 +25,3 @@
 #define COCOT_CPI_OPTIONS { 125, 250, 375, 500, 625, 750, 875, 1000, 1125, 1250, 1375, 1500, 1625 }
 #define COCOT_CPI_DEFAULT 9      // 初期値 1250（EEPROM初期化時のみ）
 #define CPI_UPDN_STEP 1          // CPI_UP / CPI_DN 1回で動く段数（1段 = 125）
-
-/* サイズ削減：ワンショットキー（OSM / OSL）を無効化 */
-#define NO_ACTION_ONESHOT

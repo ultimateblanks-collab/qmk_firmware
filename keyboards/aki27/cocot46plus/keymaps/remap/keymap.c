@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // レイヤー構成（デフォルト含め5レイヤー）
 enum layer_number {
     _BASE   = 0,
-    _AML    = 1,  // オートマウスレイヤー
+    _AML    = 1,  // 旧オートマウスレイヤー（AMLは削除。Remapで自由に割り当てる）
     _SCROLL = 2,  // スクロールレイヤー（トラックボール・LED設定キーも配置）
     _LOWER  = 3,
     _RAISE  = 4,
@@ -40,8 +40,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
                         KC_LGUI, DEL_ALT, LW_MHEN,  KC_SPC,  MS_BTN1,                       MS_BTN2,  KC_ENT, RS_HENK, KC_BSPC,  KC_ESC,
                                                              KC_PGUP, MS_BTN3, KC_PGDN, XXXXXXX, XXXXXXX, XXXXXXX
     ),
-  // AML: ボールを動かすと自動で有効。J/K/L=クリック、H=押している間スクロール
-  // 未定義(_______)の位置はデフォルトレイヤーのキーとして入力されAMLは即解除（A S D F Gと左親指は維持）
+  // レイヤー1: 初期配置は旧AMLのまま（J/K/L=クリック、H=押している間スクロール）。自動では有効にならない
   [_AML] = LAYOUT(
       _______, _______, _______, _______, _______, _______,                                       _______, _______, _______, _______, _______, _______,
       _______, _______, _______, _______, _______, _______,                                       MO_SCRL, MS_BTN1, MS_BTN3, MS_BTN2, _______, _______,
@@ -95,75 +94,6 @@ const char chordal_hold_layout[MATRIX_ROWS][MATRIX_COLS] PROGMEM = LAYOUT(
 );
 #endif
 
-// ===== オートマウスレイヤー（AML） =====
-// AML中に押してもAMLを解除しないキーポジション {row, col}（デフォルトレイヤーでの位置）
-//   {1,2}〜{1,5}: S D F G
-//   {3,0} {3,1} {3,2} {3,3} {3,5}: 左親指キー（LGUI, DEL_ALT, LW_MHEN, SPC, MS_BTN1）
-#ifndef AML_KEEP_POSITIONS
-#    define AML_KEEP_POSITIONS { {1, 2}, {1, 3}, {1, 4}, {1, 5}, {3, 0}, {3, 1}, {3, 2}, {3, 3}, {3, 5} }
-#endif
-// AML中に押すと、キーを入力せずにAMLだけ解除するポジション {row, col}
-//   {1,1}: A
-#ifndef AML_EXIT_ONLY_POSITIONS
-#    define AML_EXIT_ONLY_POSITIONS { {1, 1} }
-#endif
-// マウスボタンを押してからAMLを解除するまでの時間(ms)
-#ifndef AML_CLICK_EXIT_TIME
-#    define AML_CLICK_EXIT_TIME 250
-#endif
-
-static const uint8_t aml_keep_positions[][2] = AML_KEEP_POSITIONS;
-#define AML_KEEP_POSITIONS_SIZE (sizeof(aml_keep_positions) / sizeof(aml_keep_positions[0]))
-
-static const uint8_t aml_exit_only_positions[][2] = AML_EXIT_ONLY_POSITIONS;
-#define AML_EXIT_ONLY_POSITIONS_SIZE (sizeof(aml_exit_only_positions) / sizeof(aml_exit_only_positions[0]))
-
-static matrix_row_t aml_kept_keys[MATRIX_ROWS];      // AML維持キーとして押下中のキー
-static matrix_row_t aml_swallowed_keys[MATRIX_ROWS]; // AML解除のためだけに押され、入力を捨てたキー
-static bool         aml_click_exit_pending = false;
-static uint16_t     aml_click_exit_timer   = 0;
-static uint8_t      aml_buttons_held       = 0;
-
-static bool is_aml_keep_position(keypos_t key) {
-    for (uint8_t i = 0; i < AML_KEEP_POSITIONS_SIZE; i++) {
-        if (aml_keep_positions[i][0] == key.row && aml_keep_positions[i][1] == key.col) return true;
-    }
-    return false;
-}
-
-static bool is_aml_exit_only_position(keypos_t key) {
-    for (uint8_t i = 0; i < AML_EXIT_ONLY_POSITIONS_SIZE; i++) {
-        if (aml_exit_only_positions[i][0] == key.row && aml_exit_only_positions[i][1] == key.col) return true;
-    }
-    return false;
-}
-
-// AMLが自動で有効になっている状態か（TG/TOでトグルされている場合は除く）
-static bool is_aml_layer_active(void) {
-    return get_auto_mouse_enable() && layer_state_is(get_auto_mouse_layer()) && !get_auto_mouse_toggle();
-}
-
-// AMLを解除しない「マウス系」のキーコード
-static bool is_aml_mouse_keycode(uint16_t keycode) {
-    switch (keycode) {
-        case KC_LCTL:
-        case KC_LSFT:
-        case MO_SCRL:
-        case SCRL_MO:
-        case AM_TOG:
-        case RDP_UP:
-        case RDP_DN:
-        case RDP_TOG:
-            return true;
-        default:
-            return IS_MOUSE_KEYCODE(keycode);
-    }
-}
-
-static bool is_matrix_key(keyrecord_t *record) {
-    return IS_KEYEVENT(record->event) && record->event.key.row < MATRIX_ROWS && record->event.key.col < MATRIX_COLS;
-}
-
 // ===== ユーザー設定（ユーザー用EEPROM領域 32bit。抜き差し・再書き込み後も保持） =====
 // RDP対策の押下側の待ちの初期値(ms)。実際の値は RDP_UP / RDP_DN で変更でき、EEPROMに保存される
 #ifndef RDP_PRESS_DELAY
@@ -186,8 +116,8 @@ static bool is_matrix_key(keyrecord_t *record) {
 #endif
 #define RDP_CONFIG_MAGIC 0xA5
 
-// byte0: フラグ（bit0 = AML無効）。既存の個体はこの領域が0なので、書き込み直後はAML有効
-// byte1〜3: RDP設定（magicが合わなければ初期化。AMLのフラグは残す）
+// byte0: フラグ（未使用。旧ファームではbit0 = AML無効）
+// byte1〜3: RDP設定（magicが合わなければ初期化。フラグは残す）
 typedef union {
     uint32_t raw;
     struct {
@@ -197,7 +127,6 @@ typedef union {
         uint8_t rdp_enabled;  // 1: オン, 0: オフ（QMK標準の動作）
     };
 } user_config_t;
-#define UCFG_AML_DISABLED 0x01
 static user_config_t user_config;
 
 static void update_rdp_led(void);
@@ -209,87 +138,18 @@ static void rdp_config_reset(void) {
 }
 
 void eeconfig_init_user(void) {
-    user_config.raw = 0;  // AML有効
+    user_config.raw = 0;
     rdp_config_reset();
     eeconfig_update_user(user_config.raw);
-}
-
-static void aml_set_enabled(bool enable) {
-    set_auto_mouse_enable(enable);
-    if (!enable) {
-        // 無効化した時にAMLレイヤーに入っていたら抜ける（TG(1)の固定も解除）
-        if (get_auto_mouse_toggle()) auto_mouse_toggle();
-        layer_off(get_auto_mouse_layer());
-        aml_click_exit_pending = false;
-    }
 }
 
 void keyboard_post_init_user(void) {
     user_config.raw = eeconfig_read_user();
     if (user_config.rdp_magic != RDP_CONFIG_MAGIC || user_config.rdp_delay > RDP_DELAY_MAX || user_config.rdp_enabled > 1) {
-        rdp_config_reset();  // 旧ファームからの移行時など。AMLのフラグはそのまま
+        rdp_config_reset();  // 旧ファームからの移行時など。フラグはそのまま
         eeconfig_update_user(user_config.raw);
     }
-    aml_set_enabled(!(user_config.flags & UCFG_AML_DISABLED));
     update_rdp_led();
-}
-
-// 維持ポジション・マウス系以外のキーが押されたら即AML解除。
-// キーコード確定より前にレイヤーを落とすので、押したキーはデフォルトレイヤー側のキーとして入力される。
-// AML_EXIT_ONLY_POSITIONS のキーは、AMLだけ解除してキー入力は捨てる（押下・解放とも）。
-bool pre_process_record_user(uint16_t keycode, keyrecord_t *record) {
-    if (!is_matrix_key(record)) return true;
-    keypos_t     key = record->event.key;
-    matrix_row_t bit = (matrix_row_t)1 << key.col;
-
-    if (record->event.pressed) {
-        if (is_aml_layer_active() && !is_aml_keep_position(key) && !is_aml_mouse_keycode(keycode)) {
-            auto_mouse_reset_trigger(true);
-            if (is_aml_exit_only_position(key)) {
-                aml_swallowed_keys[key.row] |= bit;
-                return false;
-            }
-        }
-    } else if (aml_swallowed_keys[key.row] & bit) {
-        aml_swallowed_keys[key.row] &= ~bit;
-        return false;
-    }
-    return true;
-}
-
-// AMLを維持するキー（エンコーダ回転、マウス系キー、AML中に押された維持ポジション）
-bool is_mouse_record_user(uint16_t keycode, keyrecord_t *record) {
-    // ロータリーエンコーダの回転ではAMLを解除しない
-    if (IS_ENCODEREVENT(record->event)) return true;
-    if (is_matrix_key(record)) {
-        keypos_t     key = record->event.key;
-        matrix_row_t bit = (matrix_row_t)1 << key.col;
-        if (record->event.pressed) {
-            if (is_aml_layer_active() && is_aml_keep_position(key)) {
-                aml_kept_keys[key.row] |= bit;
-                return true;
-            }
-        } else if (aml_kept_keys[key.row] & bit) {
-            // 押した時に維持キーとして数えたものは、離した時も同じ扱いにする
-            aml_kept_keys[key.row] &= ~bit;
-            return true;
-        }
-    }
-    return is_aml_mouse_keycode(keycode);
-}
-
-// マウスボタンを押してからAML_CLICK_EXIT_TIME経過でAML解除（ボタンを押し続けている間は待つ）
-void housekeeping_task_user(void) {
-    if (aml_click_exit_pending && aml_buttons_held == 0 && timer_elapsed(aml_click_exit_timer) > AML_CLICK_EXIT_TIME) {
-        aml_click_exit_pending = false;
-        if (is_aml_layer_active()) {
-            // レイヤーを落として状態をリセット。再発動の待ち(delay)は解除し、
-            // クリック後にボールを動かせばすぐAMLへ戻れるようにする。
-            auto_mouse_reset_trigger(true);
-            auto_mouse_keyevent(true);
-            auto_mouse_keyevent(false);
-        }
-    }
 }
 
 // インジケータLED（2個）：RDP_LED_INDEX をRDP対策の表示（オンで白点灯）、もう1個をレイヤー表示に使う。
@@ -462,15 +322,6 @@ static void rdp_tap_shifted(uint8_t kc) {
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    if (keycode == AM_TOG) {
-        if (record->event.pressed) {
-            user_config.flags ^= UCFG_AML_DISABLED;
-            eeconfig_update_user(user_config.raw);
-            aml_set_enabled(!(user_config.flags & UCFG_AML_DISABLED));
-        }
-        return false;
-    }
-
     if (keycode == RDP_UP || keycode == RDP_DN || keycode == RDP_TOG) {
         if (record->event.pressed) rdp_change_setting(keycode);
         return false;
@@ -479,19 +330,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (keycode == CPI_UP || keycode == CPI_DN) {
         if (record->event.pressed) cpi_step(keycode == CPI_UP ? 1 : -1);
         return false;
-    }
-
-    // マウスボタンの押下でAML解除タイマーを開始（押すたびに再スタート）
-    if (keycode >= MS_BTN1 && keycode <= MS_BTN8) {
-        if (record->event.pressed) {
-            aml_buttons_held++;
-            if (is_aml_layer_active()) {
-                aml_click_exit_pending = true;
-                aml_click_exit_timer   = timer_read();
-            }
-        } else if (aml_buttons_held) {
-            aml_buttons_held--;
-        }
     }
 
     // RDP対策（オフのときはQMK標準の動作。Mod-TapのShift付きタップだけは下で処理する）
